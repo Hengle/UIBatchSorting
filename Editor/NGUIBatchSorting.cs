@@ -5,6 +5,8 @@ http://www.dpull.com
 
 ****************************************************************************/
 
+// #define DEBUG_WITH_NGUI_DRAWCALL_TOOL // enable debug with ngui drawcall tool
+
 using UnityEditorInternal;
 using UnityEngine;
 using System.Collections;
@@ -46,10 +48,28 @@ public class NGUIBatchSorting
             }
         }
 
+
+		// http://www.tasharen.com/forum/index.php?topic=13420
+		static int PanelCompareFunc (UIWidget left, UIWidget right)
+		{
+			if (left.depth < right.depth) return -1;
+			if (left.depth > right.depth) return 1;
+			
+			Material leftMat = left.material;
+			Material rightMat = right.material;
+			
+			if (leftMat == rightMat) return 0;
+			if (leftMat != null && rightMat == null) return -1;
+			if (leftMat == null && rightMat != null) return 1;
+			
+			return (leftMat.GetInstanceID() < rightMat.GetInstanceID()) ? -1 : 1;
+        }
+        
         public override int CompareTo(UIBatchSorting.SortItem other)
         {
-            return UIWidget.PanelCompareFunc(this.Widget, ((UIWidgetSortItem)other).Widget);
-        }
+			// return UIWidget.PanelCompareFunc(this.Widget, ((UIWidgetSortItem)other).Widget);
+			return PanelCompareFunc(this.Widget, ((UIWidgetSortItem)other).Widget);
+		}
 
         public override bool IsDependent(UIBatchSorting.SortItem other)
         {
@@ -95,19 +115,7 @@ public class NGUIBatchSorting
                 Debug.LogWarning("UIPanel不存在渲染对象" + panel.gameObject.GetFullName(go.transform));
                 continue;
             }
-
-//            Debug.Log(UIBatchSorting.GetDrawCallCount(sortItems));
-//            
-//            var start = 0;
-//            for (var i = 0; i < sortItems.Length; ++i)
-//            {
-//                if (sortItems[i].Key == sortItems[start].Key)
-//                    continue;
-//                Debug.Log(string.Format("{0}\t{1}", i - start, sortItems[start].ToString()));
-//                start = i;
-//            }
-//            continue;
-            
+			            
             var newSortItems = UIBatchSorting.Sort(sortItems);
             var sortItemsDrawCallCount = UIBatchSorting.GetDrawCallCount(sortItems);
             var newSortItemsCount = UIBatchSorting.GetDrawCallCount(newSortItems);
@@ -115,8 +123,12 @@ public class NGUIBatchSorting
             if (sortItemsDrawCallCount == newSortItemsCount)
                 continue;
 
+#if DEBUG_WITH_NGUI_DRAWCALL_TOOL
+			PrintDrawcall(sortItems); 
+#endif
+
             UIBatchSorting.AdjustDepth(newSortItems);
-            sortInfo.AppendFormat("{0}优化了:{1}DrawCall.({2}=>{3})\n",
+			sortInfo.AppendFormat("{0} 优化DrawCall: {1} .({2}=>{3})\n",
                                panel.name, 
                                sortItemsDrawCallCount - newSortItemsCount, 
                                sortItemsDrawCallCount, 
@@ -125,6 +137,21 @@ public class NGUIBatchSorting
 
         Debug.Log(sortInfo.ToString());
     }
+
+	static void PrintDrawcall(UIBatchSorting.SortItem[] items)
+	{
+		var start = 0;
+		var index = 1;
+		for (var i = 0; i < items.Length; ++i)
+		{
+			if (items[i].Key == items[start].Key)
+				continue;
+			Debug.Log(string.Format("{0}\t{1}\t{2}\t{3}", index, i - start, items[start].ToString(), items[start].Key));
+			start = i;
+			index++;
+		}
+		Debug.Log(string.Format("{0}\t{1}\t{2}\t{3}", index, items.Length - start, items[start].ToString(), items[start].Key));
+	}
 
     delegate bool TraversalCallback(GameObject go);
     static bool Traversal(GameObject go, TraversalCallback callback)
@@ -158,6 +185,11 @@ public class NGUIBatchSorting
         var widgets = new List<UIWidget>();
         
         Traversal(panel.gameObject, child => {
+#if DEBUG_WITH_NGUI_DRAWCALL_TOOL
+			if (!child.activeSelf)
+				return false;
+#endif
+
             var childPanel = child.GetComponent<UIPanel>();
             if (childPanel != null && childPanel != panel)
                 return false;
